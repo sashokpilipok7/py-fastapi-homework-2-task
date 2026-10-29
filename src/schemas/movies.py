@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Optional
 
+from database.models import MovieStatusEnum
 from pydantic import BaseModel, ConfigDict
 
 
@@ -9,21 +10,23 @@ class MovieBase(BaseModel):
     date: date
     score: float
     overview: str
-    status: str
-    orig_lang: str
+    status: MovieStatusEnum
     budget: float
     revenue: float
     country_id: int
 
-class MovieCreate(MovieBase):
+class MovieDetailSchema(MovieBase):
     pass
+
+class MovieCreate(MovieBase):
+    country: str
+    genres: list[str]
+    actors: list[str]
+    languages: list[str]
 
 class MovieUpdate(MovieBase):
     pass
 
-
-class MovieDetailSchema(MovieBase):
-    pass
 
 class MovieListItemSchema(MovieBase):
     id: int

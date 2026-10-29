@@ -6,11 +6,86 @@ from sqlalchemy.orm import joinedload
 
 from database import get_db, MovieModel
 from database.models import CountryModel, GenreModel, ActorModel, LanguageModel
-from schemas.movies import MovieListResponseSchema
+from schemas import MovieListItemSchema
+from schemas.movies import MovieListResponseSchema, MovieCreate, MovieDetailSchema
 
 router = APIRouter()
 
-@router.get("/movies", response_model=MovieListResponseSchema)
-async def get_movies(db: AsyncSession = Depends(get_db())):
-    movies = []
-    return movies
+@router.get("/movies/", response_model=int)
+async def get_movies(page:int =  Query(1, ge = 1), per_page: int = Query(10, ge=1, le=30), db: AsyncSession = Depends(get_db)):
+    movies_count = await db.execute(select(func.count(MovieModel.id)).select_from(MovieModel))
+    movies_count = movies_count.scalar()
+
+    if not movies_count or movies_count == 0:
+        raise HTTPException(status_code=404, detail="No movies found.")
+
+    total_pages = movies_count // per_page + 1
+    offset = (page - 1) * per_page
+
+    movies = await db.execute(select(MovieModel).offset(offset).limit(per_page).order_by(MovieModel.id))
+    movies = movies.scalars().all()
+
+    if not movies:
+        raise HTTPException(status_code=404, detail="No movies found.")
+
+    prev_page = f"/theater/movies/?page={page - 1}&per_page={per_page}" if page > 1 else None
+    next_page = f"/theater/movies/?page={page + 1}&per_page={per_page}" if page < total_pages else None
+
+
+    return MovieListResponseSchema(
+        movies=movies,
+        next_page=next_page,
+        prev_page=prev_page,
+        total_pages=total_pages,
+        total_items=movies_count
+    )
+
+async def get_or_create_inner_instances(key: str, data: list[str],  db: AsyncSession):
+    item_instants_list = []
+
+    for item_name in data:
+        stmt_items = select(GenreModel).where(GenreModel.name == item_name)
+        result = await db.execute(stmt_items)
+        item = result.scalars().first()
+
+
+        if not item:
+            item = GenreModel(name=item_name)
+            db.add(item)
+            await db.flush()
+        item_instants_list.append(item)
+
+    return item_instants_list
+
+@router.post("/movies/", response_model=MovieDetailSchema)
+async def create_movies(movie: MovieCreate, db: AsyncSession = Depends(get_db)):
+
+    genre_list = await get_or_create_inner_instances("genres", movie.genres, db)
+    actor_list = await get_or_create_inner_instances("actors", movie.actors, db)
+    languages_list = await get_or_create_inner_instances("languages", movie.languages, db)
+
+    movie = MovieModel(
+        name=movie.name,
+        date=movie.date,
+        score=movie.score,
+        overview=movie.overview,
+        status=movie.status,
+        budget=movie.budget,
+        revenue=movie.revenue,
+        country_id=movie.country_id,
+        genres=genre_list,
+        actors=actor_list,
+        languages=languages_list
+    )
+    db.add(movie)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"A movie with the name '{movie.name}' and release date '{movie.date}' already exists."
+        )
+    await db.refresh(movie)
+
+    return movie
