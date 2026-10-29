@@ -69,7 +69,7 @@ async def create_movies(movie: MovieCreate, db: AsyncSession = Depends(get_db)):
     actor_list = await get_or_create_inner_instances(ActorModel, movie.actors, db)
     languages_list = await get_or_create_inner_instances(LanguageModel, movie.languages, db)
 
-    movie = MovieModel(
+    new_movie = MovieModel(
         name=movie.name,
         date=movie.date,
         score=movie.score,
@@ -82,7 +82,7 @@ async def create_movies(movie: MovieCreate, db: AsyncSession = Depends(get_db)):
         actors=actor_list,
         languages=languages_list
     )
-    db.add(movie)
+    db.add(new_movie)
     try:
         await db.commit()
     except IntegrityError as e:
