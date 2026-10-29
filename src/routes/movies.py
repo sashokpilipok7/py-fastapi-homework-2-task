@@ -40,19 +40,24 @@ async def get_movies(page:int =  Query(1, ge = 1), per_page: int = Query(10, ge=
         total_items=movies_count
     )
 
-async def get_or_create_inner_instances(key: str, data: list[str],  db: AsyncSession):
+async def get_or_create_inner_instances(model_class, data: list[str],  db: AsyncSession) -> list:
     item_instants_list = []
 
     for item_name in data:
-        stmt_items = select(GenreModel).where(GenreModel.name == item_name)
+        stmt_items = select(model_class).where(getattr(model_class, "name") == item_name)
         result = await db.execute(stmt_items)
         item = result.scalars().first()
 
 
         if not item:
-            item = GenreModel(name=item_name)
-            db.add(item)
-            await db.flush()
+            try:
+                item = model_class(name=item_name)
+                db.add(item)
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                item = await db.execute(stmt_items)
+                item = item.scalars().first()
         item_instants_list.append(item)
 
     return item_instants_list
@@ -60,9 +65,9 @@ async def get_or_create_inner_instances(key: str, data: list[str],  db: AsyncSes
 @router.post("/movies/", response_model=MovieDetailSchema)
 async def create_movies(movie: MovieCreate, db: AsyncSession = Depends(get_db)):
 
-    genre_list = await get_or_create_inner_instances("genres", movie.genres, db)
-    actor_list = await get_or_create_inner_instances("actors", movie.actors, db)
-    languages_list = await get_or_create_inner_instances("languages", movie.languages, db)
+    genre_list = await get_or_create_inner_instances(GenreModel,  movie.genres, db)
+    actor_list = await get_or_create_inner_instances(ActorModel, movie.actors, db)
+    languages_list = await get_or_create_inner_instances(LanguageModel, movie.languages, db)
 
     movie = MovieModel(
         name=movie.name,
@@ -80,12 +85,22 @@ async def create_movies(movie: MovieCreate, db: AsyncSession = Depends(get_db)):
     db.add(movie)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         await db.rollback()
         raise HTTPException(
             status_code=409,
             detail=f"A movie with the name '{movie.name}' and release date '{movie.date}' already exists."
         )
-    await db.refresh(movie)
 
-    return movie
+    stmt = (
+        select(MovieModel)
+        .options(
+            joinedload(MovieModel.country),
+            joinedload(MovieModel.genres),
+            joinedload(MovieModel.actors),
+            joinedload(MovieModel.languages),
+        )
+        .where(MovieModel.id == movie.id)
+    )
+    result = await db.execute(stmt)
+    return result.scalars().first()

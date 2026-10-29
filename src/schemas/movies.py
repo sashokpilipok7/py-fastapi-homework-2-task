@@ -16,7 +16,10 @@ class MovieBase(BaseModel):
     country_id: int
 
 class MovieDetailSchema(MovieBase):
-    pass
+    country: Optional[str] = None
+    genres: list[str] = []
+    actors: list[str] = []
+    languages: list[str] = []
 
 class MovieCreate(MovieBase):
     country: str
@@ -25,12 +28,21 @@ class MovieCreate(MovieBase):
     languages: list[str]
 
 class MovieUpdate(MovieBase):
-    pass
+    name: Optional[str] = None
+    date: Optional[date] = None
+    score: Optional[float] = None
+    overview: Optional[str] = None
+    status: Optional[MovieStatusEnum] = None
+    budget: Optional[float] = None
+    revenue: Optional[float] = None
 
 
 class MovieListItemSchema(MovieBase):
     id: int
-
+    name: str
+    date: date
+    score: float
+    overview: str
     model_config = ConfigDict(from_attributes=True)
 
 class MovieListResponseSchema(BaseModel):
